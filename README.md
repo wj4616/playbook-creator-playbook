@@ -8,13 +8,16 @@ that another operator (or agent) can then execute.
 Provider-agnostic and executable by any AI agent system; **optimized for Claude Code on the Max
 plan** (high budget) with a first-class OpenAI Codex profile.
 
-- **The meta-playbook:** [`playbook-creator-playbook.json`](playbook-creator-playbook.json) (v8)
+- **The meta-playbook:** [`playbook-creator-playbook.json`](playbook-creator-playbook.json) (v9)
 - **Output contract:** [`templates/output-schema.json`](templates/output-schema.json)
 - **Start-here skeleton for a new playbook:** [`templates/output-template.json`](templates/output-template.json)
 - **Validators:** [`scripts/validate_playbook.py`](scripts/validate_playbook.py) (structural + JSON Schema),
   [`scripts/validate_semantic.py`](scripts/validate_semantic.py) (cross-reference / semantic)
-- **Generator prompt:** [`prompts/playbook-updater.md`](prompts/playbook-updater.md) — a standalone
-  prompt that turns a raw AI-development session history into a schema-shaped playbook + gap analysis
+- **Session-harvest front-end:** [`prompts/playbook-updater.md`](prompts/playbook-updater.md) — a
+  prompt that distills a raw AI-development session history into a cited *harvest* and feeds it to
+  the pipeline (or fills the template directly)
+- **Orchestrator:** [`scripts/harvest_session.py`](scripts/harvest_session.py) — `harvest-skeleton` /
+  `scaffold` / `check` (runs both validators to green)
 
 ## Why
 
@@ -47,12 +50,29 @@ omit it and set `PBCPB_TRACE_WORKSPACE`.)
 ## Generating a playbook from a session history
 
 Two ways to author a playbook. Walk the 16 phases interactively (above), **or** — when you already
-have a raw history of an AI-assisted build to distill — hand [`prompts/playbook-updater.md`](prompts/playbook-updater.md)
-to an agent along with that transcript. It extracts the repeated workflows, failure modes, domain
-patterns, and creative decision points into a schema-shaped JSON playbook plus a gap analysis. It
-follows the same v8 contract: derive a custom team, mark the Coordinator / independent Verifier /
-Operator invariants, and emit the optional role-spec fields. Always validate its output with the two
-validators before shipping.
+have a raw history of an AI-assisted build to distill — use the **session-harvest front-end**. As of
+v9 it is a front-end *to the pipeline*, not a one-shot generator: it extracts cited evidence and lets
+PBCPB do the shaping, role derivation, validation, and audit.
+
+```bash
+# 1) Scaffold the cited-evidence skeleton, then fill it via the prompt + your transcript
+python3 scripts/harvest_session.py harvest-skeleton --out research/session-harvest.md
+#    (hand research/session-harvest.md + the raw transcript to prompts/playbook-updater.md)
+
+# 2a) INTEGRATED (recommended): set commission_source=session_history at Phase 0 with the
+#     harvest as input; Phase 1 ingests + validates it and Phases 4-15 build/verify the playbook —
+#     you inherit role derivation, the independent-verifier gate, Phase 11 gap analysis, and the
+#     Phase 12 stress-test + dry-run.
+
+# 2b) STANDALONE (no full pipeline): scaffold + fill + validate to green
+python3 scripts/harvest_session.py scaffold --name my-playbook --harvest research/session-harvest.md
+python3 scripts/harvest_session.py check my-playbook.json
+```
+
+Every harvested item is **cited to its session** (`CCC-12`); single-occurrence patterns are flagged,
+not promoted to rules. The prompt authors against `output-schema.json` (loaded, not remembered),
+reuses the failure-mode / cross-cutting-concern catalogs, and derives a custom team with the v8
+invariants — so the output can't drift from the contract.
 
 ## The 16 phases
 
@@ -62,8 +82,9 @@ validators before shipping.
 10 JSON Validation · 11 Quality Audit / Gap Analysis · 12 Stress Testing & Structured Dry-Run ·
 13 Stakeholder Review · 14 Documentation & Version Control · 15 Continuous Improvement.
 
-Routing: mostly sequential, gate-guarded. If Phase 0 sets `kb_mode != PLAYBOOK_MANAGED`, Phases 2–3
-are skipped.
+Routing: mostly sequential, gate-guarded. Phase 0 records a `commission_source`
+(`fresh` | `session_history` | `existing_playbook_revision`); `session_history` runs the harvest
+front-end first (see below). If Phase 0 sets `kb_mode != PLAYBOOK_MANAGED`, Phases 2–3 are skipped.
 
 ## Custom team engineering (v8)
 

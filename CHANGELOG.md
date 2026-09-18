@@ -2,6 +2,27 @@
 
 All notable changes to the Playbook Creator Playbook. This public distribution starts at v7.
 
+## v9 — 2026-09-18
+- **The session-harvest updater is now a front-end to the pipeline, not a parallel generator.**
+  Previously the prompt carried a prose copy of the contract and one-shot-emitted a playbook (so it
+  drifted from the schema and skipped every gate). v9 makes it *use* PBCPB:
+  - **Author against the real contract.** The prompt loads `templates/output-schema.json` as ground
+    truth, fills `templates/output-template.json`, reuses the failure-mode / cross-cutting-concern
+    catalogs, and **validates to green** with the real validators. Non-contract sections dropped.
+    New **FM-037** (contract-fidelity drift).
+  - **Route the harvest through the meta-playbook.** Phase 0 records `commission_source`
+    (`fresh` | `session_history` | `existing_playbook_revision`); Phase 1 gains a conditional
+    *ingest + validate the session harvest* task that treats it as **cited evidence** (verify
+    citations, flag single-occurrence patterns, reuse the FM catalog) then hands off to Phases 4–15
+    (role derivation, assembly, validation, Phase 11 gap analysis, Phase 12 stress-test + dry-run).
+    New **CCC-12** (evidence traceability), **FM-038/039**. The router documents the branch.
+  - **Runtime wiring.** Harvested roles compile via Phase 7 agent compilation; domain patterns route
+    to a KB layer (`kb_mode=USER_SUPPLIED`) instead of inline blocks; capability tiers emitted.
+- **New `scripts/harvest_session.py`** (stdlib + jsonschema): `harvest-skeleton` writes the cited-
+  evidence skeleton, `scaffold` copies the schema-valid template, `check` runs both validators and
+  reports combined green/red — the validate-to-green loop the prompt and Phase 10 depend on.
+- The prompt now has explicit **integrated** (recommended) and **standalone** modes.
+
 ## v8 — 2026-09-18
 - **Domain-custom role & agent generation.** Produced playbooks are no longer forced onto a fixed
   six-role slate. **Phase 5** now *derives* a bespoke execution team from the actual work — clustering

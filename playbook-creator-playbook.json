@@ -1,6 +1,6 @@
 {
   "title": "Playbook Creator Playbook",
-  "version": 8,
+  "version": 9,
   "description": "Meta-playbook for creating domain-specific playbooks. Produces structured JSON playbooks through 16 phases of research, KB construction and bootstrapping, architecture, task engineering, assembly, validation, and structured dry-run. Works with single-agent systems where one agent fills multiple functional roles; output playbooks may optionally use role-based-multi-agent with per-role agent_assignment.",
   "phase_summary": [
     "Phase 0: Commission & Scoping — Establish configuration (output location, external data permissions), define purpose, scope, constraints, complexity profile. Agent must acknowledge all 16 phases.",
@@ -363,6 +363,19 @@
         11,
         12
       ]
+    },
+    {
+      "id": "CCC-12",
+      "title": "Evidence Traceability (harvested playbooks)",
+      "description": "When commission_source=session_history, every failure mode, domain pattern, and decision carried into the produced playbook must cite the session/segment it was extracted from. Single-occurrence observations are flagged, not promoted to rules, until a second run confirms them.",
+      "enforcement_method": "gate_condition",
+      "enforcement_rule": "Phase 1 ingest verifies citations and drops/flags uncited items; Phase 11 audit and Phase 12 dry-run re-check that harvested rules are supported before they gate anything.",
+      "minimum_phases": 2,
+      "phases_applied": [
+        1,
+        11,
+        12
+      ]
     }
   ],
   "knowledge_base": {
@@ -440,8 +453,8 @@
         {
           "title": "[Coordinator] — Establish configuration",
           "owner": "[Coordinator]",
-          "description": "Ask the user to establish runtime configuration before any other work begins:\n\n1. OUTPUT LOCATION\n   - Default: ~/playbooks/<playbook-name>/\n   - Ask: \"Save location: ~/playbooks/<playbook-name>/ — correct, or specify different path?\"\n   - If user specifies different path: use exact path provided\n   - If directory exists: create ~/playbooks/<playbook-name>-v2/ (or next available: -v3, -v4, etc.)\n   - Never merge or replace existing content in any directory\n\n2. EXTERNAL DATA SOURCES\n   - First, list available sources with numbered labels:\n     * [1] Knowledge base at [path]\n     * [2] Other playbooks at [path]\n     * [3] References at [path]\n   - Then ask: \"Include any external sources? Options: 'none', 'all', or specify which (e.g., '1 and 3', 'all except 2')\"\n   - User can respond with:\n     * \"none\" or \"no\" — skip all sources, document \"No external data sources required\"\n     * \"all\" — include all listed sources\n     * Numbers/names — include only specified sources (e.g., \"1 and 3\", \"just the knowledge base\")\n     * \"all except N\" — include all except specified\n   - Record all decisions in scope.md configuration section\n   - Only access sources user explicitly approved\n   - If no sources available or no external sources needed, document \"No external data sources required\"\n\nOutput: scope.md with configuration section documenting all decisions.",
-          "output": "scope.md (configuration section)"
+          "description": "Ask the user to establish runtime configuration before any other work begins:\n\n1. OUTPUT LOCATION\n   - Default: ~/playbooks/<playbook-name>/\n   - Ask: \"Save location: ~/playbooks/<playbook-name>/ — correct, or specify different path?\"\n   - If user specifies different path: use exact path provided\n   - If directory exists: create ~/playbooks/<playbook-name>-v2/ (or next available: -v3, -v4, etc.)\n   - Never merge or replace existing content in any directory\n\n2. EXTERNAL DATA SOURCES\n   - First, list available sources with numbered labels:\n     * [1] Knowledge base at [path]\n     * [2] Other playbooks at [path]\n     * [3] References at [path]\n   - Then ask: \"Include any external sources? Options: 'none', 'all', or specify which (e.g., '1 and 3', 'all except 2')\"\n   - User can respond with:\n     * \"none\" or \"no\" — skip all sources, document \"No external data sources required\"\n     * \"all\" — include all listed sources\n     * Numbers/names — include only specified sources (e.g., \"1 and 3\", \"just the knowledge base\")\n     * \"all except N\" — include all except specified\n   - Record all decisions in scope.md configuration section\n   - Only access sources user explicitly approved\n   - If no sources available or no external sources needed, document \"No external data sources required\"\n\nOutput: scope.md with configuration section documenting all decisions.\n\n3. COMMISSION SOURCE\n   - Ask: \"What is this playbook built from? 'fresh' (new commission), 'session_history' (distil a prior AI-assisted build), or 'existing_playbook_revision' (revise a playbook you already have)?\"\n   - fresh (default): proceed normally.\n   - session_history: a session harvest is REQUIRED as input. If one does not yet exist, run the front-end prompt `prompts/playbook-updater.md` against the raw transcript FIRST to produce `research/session-harvest.md`; Phase 1 then ingests and validates it.\n   - existing_playbook_revision: the prior playbook is input for the Phase 1 audit task.\n   - Record commission_source in decisions-ledger.md; it drives the router.",
+          "output": "scope.md (configuration section), decisions-ledger.md (commission_source)"
         },
         {
           "title": "[Stakeholder] — Decide knowledge base strategy",
@@ -659,6 +672,13 @@
           "conditional": "Only if replacing an existing playbook",
           "description": "What the existing playbook does well (KEEP), what it does poorly (FIX), what it's missing (ADD), what contradicts current strategy (REMOVE).",
           "output": "audits/existing-playbook-audit.md"
+        },
+        {
+          "title": "[Researcher] — Ingest and validate the session harvest",
+          "owner": "[Researcher]",
+          "conditional": "Only if commission_source=session_history",
+          "description": "Consume `research/session-harvest.md` (produced by the front-end prompt `prompts/playbook-updater.md`). Treat it as EVIDENCE, not truth:\n1. Verify every extracted item cites the session/segment it came from; drop or flag any that don't (CCC-12).\n2. Mark single-occurrence patterns 'verify in future runs' rather than promoting them to rules.\n3. Seed the working failure-mode set from the harvest AND from PBCPB's existing failure-mode catalog (reuse ids where a known FM matches; mint new FM-NNN only for genuinely new ones).\n4. Fold the harvested domain patterns/algorithms into the domain research docs; if they are substantial, plan a KB layer for them (Phase 2, kb_mode=USER_SUPPLIED) instead of inlining.\n5. Carry the harvested creative-decision points forward as candidate human/Operator gates for Phase 5 role derivation.\nThe harvest informs requirements; it does not bypass Phases 4-15.",
+          "output": "research/session-derived-requirements.md"
         },
         {
           "title": "[Stakeholder] — Gather process knowledge from subject matter experts",
@@ -1653,7 +1673,7 @@
         {
           "title": "[Architect] — Compile role specs into per-provider agent files",
           "owner": "[Architect]",
-          "description": "Compile each canonical role spec (Phase 5, architecture/role-specs.md) into concrete agent definitions for the target provider(s). The spec is the source of truth; these files are build artifacts.\n\n- Claude Code: emit .claude/agents/<role>.md with YAML frontmatter — name, description, model (resolved from the role's tier via defaults.providers[provider]), tools (from spec.tools) — and a system-prompt body built from role_context + decision_authority + interfaces.\n- OpenAI Codex: emit an equivalent role-prompt file (model from the codex provider profile, gpt-5.5).\n- Generic: emit an agents/manifest.json mapping role -> {tier, tools, system_prompt} for any other runner.\n\nThese compiled agents ARE the execution team that runs the OUTPUT playbook. Record the compilation target and the tier->model resolution in the output config so the team is reproducible. If the output workflow_model is single-agent, the compilation still emits the specs but notes one agent switches role_context per phase.",
+          "description": "Compile each canonical role spec (Phase 5, architecture/role-specs.md) into concrete agent definitions for the target provider(s). The spec is the source of truth; these files are build artifacts.\n\n- Claude Code: emit .claude/agents/<role>.md with YAML frontmatter — name, description, model (resolved from the role's tier via defaults.providers[provider]), tools (from spec.tools) — and a system-prompt body built from role_context + decision_authority + interfaces.\n- OpenAI Codex: emit an equivalent role-prompt file (model from the codex provider profile, gpt-5.5).\n- Generic: emit an agents/manifest.json mapping role -> {tier, tools, system_prompt} for any other runner.\n\nThese compiled agents ARE the execution team that runs the OUTPUT playbook. Record the compilation target and the tier->model resolution in the output config so the team is reproducible. If the output workflow_model is single-agent, the compilation still emits the specs but notes one agent switches role_context per phase.\n\nWhen commission_source=session_history, the roles derived from the harvest compile the same way — the produced update-playbook therefore ships with its own execution team, not just a role list.",
           "output": "output-config/agent-compilation.md"
         },
         {
@@ -3378,6 +3398,36 @@
       "phase": "Phase 7: Output Configuration",
       "severity": "degraded",
       "source": "agent-compilation"
+    },
+    {
+      "id": "FM-037",
+      "symptom": "Produced playbook carries top-level sections the schema doesn't define (e.g. domain_patterns, domain_catalog) as if they were the contract, or role/metric shapes drift from output-schema.json",
+      "root_cause": "Author worked from a remembered/prose copy of the contract instead of loading templates/output-schema.json",
+      "fix": "Author against the loaded schema and fill templates/output-template.json; move genuinely extra data into a KB layer (kb_mode=USER_SUPPLIED), not into invented top-level fields.",
+      "prevention": "CCC-01/contract fidelity: Phase 9 loads output-schema.json + output-template.json and self-validates before Phase 10 (audit F2).",
+      "phase": "Phase 9: JSON Assembly",
+      "severity": "degraded",
+      "source": "contract-fidelity"
+    },
+    {
+      "id": "FM-038",
+      "symptom": "Session harvest is taken as fact — uncited or single-occurrence patterns become hard rules that then gate the build",
+      "root_cause": "Harvest ingested without verifying citations or occurrence counts",
+      "fix": "Phase 1 ingest verifies each item's citation, flags single-occurrence patterns, and reuses PBCPB's FM/CCC catalogs before minting new ids.",
+      "prevention": "CCC-12 (evidence traceability): uncited items dropped/flagged; single-occurrence marked 'verify in future runs'.",
+      "phase": "Phase 1: Domain Research & Process Discovery",
+      "severity": "degraded",
+      "source": "session-harvest"
+    },
+    {
+      "id": "FM-039",
+      "symptom": "The front-end prompt's output is returned without ever running the validators; schema/semantic errors ship (reintroducing the drift the audit fixed)",
+      "root_cause": "Standalone one-shot generation with no validate-to-green loop",
+      "fix": "Run validate_playbook.py --no-trace --schema and validate_semantic.py (or scripts/harvest_session.py check) and iterate until both pass before returning.",
+      "prevention": "Updater mandates the validate loop; Phase 10 re-runs it as the gate.",
+      "phase": "Phase 10: JSON Validation & Consistency",
+      "severity": "error",
+      "source": "validate-to-green"
     }
   ],
   "phase_kb_mapping": {
@@ -3417,9 +3467,10 @@
     "phase_15": "none"
   },
   "router": {
-    "description": "The playbook creator is mostly sequential. One conditional branch exists at Phase 1 → Phase 2: if kb_mode != PLAYBOOK_MANAGED, skip Phases 2 and 3 and jump directly to Phase 4.",
+    "description": "The playbook creator is mostly sequential. Two conditional inputs at the front (commission_source) and one KB branch at Phase 1->2 (kb_mode). A raw session history is distilled by the front-end prompt into a harvest, then built and verified by the full pipeline — not emitted one-shot.",
     "decision_tree": [
       "New playbook commission → Start at Phase 0",
+      "Commission from a raw AI-dev session history -> run prompts/playbook-updater.md to produce research/session-harvest.md, set commission_source=session_history at Phase 0; Phase 1 ingests + validates it, then Phases 4-15 derive roles, assemble, validate, audit, and dry-run as normal.",
       "Resume interrupted run → Check artifact-manifest.md for latest phase, resume there",
       "Post-run improvement → Go directly to Phase 15",
       "After Phase 1: check scope.md kb_mode → if PLAYBOOK_MANAGED: proceed to Phase 2 → Phase 3 → Phase 4. If EXTERNAL_DIFY_MCP, USER_SUPPLIED, or NONE: skip Phase 2 and Phase 3, proceed directly to Phase 4."
