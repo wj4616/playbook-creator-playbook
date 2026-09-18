@@ -1,0 +1,520 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "playbook-output-schema",
+  "title": "Playbook Output Schema",
+  "description": "Schema for playbooks produced by the playbook-creator-playbook. All output playbooks must conform to this structure.",
+  "type": "object",
+  "required": [
+    "title", "version", "description", "workflow_model", "roles", "scope",
+    "cross_cutting_concerns", "knowledge_base", "checklists", "metrics",
+    "usage_instructions", "failure_modes", "phase_kb_mapping",
+    "skill_activation", "router", "context_preservation"
+  ],
+  "properties": {
+    "title": {
+      "type": "string",
+      "description": "Playbook name",
+      "minLength": 1
+    },
+    "version": {
+      "type": "integer",
+      "description": "Playbook version number",
+      "minimum": 1
+    },
+    "description": {
+      "type": "string",
+      "description": "1-3 sentence overview"
+    },
+    "workflow_model": {
+      "type": "string",
+      "description": "Execution model",
+      "enum": ["human-in-the-loop", "fully-autonomous", "human-directed", "role-based-single-agent", "role-based-multi-agent"]
+    },
+    "defaults": {
+      "type": "object",
+      "description": "Playbook-level defaults for agent configuration",
+      "properties": {
+        "model": {
+          "type": "string",
+          "description": "Default model: opus, sonnet, haiku, or provider:model format",
+          "default": "opus"
+        },
+        "model_fallbacks": {
+          "type": "object",
+          "description": "Fallback chains for unavailable models",
+          "additionalProperties": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        },
+        "context_budget_tokens": {
+          "type": "integer",
+          "description": "Default context budget in tokens",
+          "minimum": 1000,
+          "default": 64000
+        },
+        "system_prompt_budget": {
+          "type": "integer",
+          "description": "Tokens reserved for generated system prompt",
+          "minimum": 500,
+          "default": 2000
+        },
+        "critical_priority_threshold": {
+          "type": "integer",
+          "description": "Files at priority 1-N cannot be skipped",
+          "minimum": 1,
+          "maximum": 10,
+          "default": 3
+        },
+        "temperature": {
+          "type": "number",
+          "description": "Default temperature (0-2)",
+          "minimum": 0,
+          "maximum": 2,
+          "default": 0.3
+        },
+        "max_tokens": {
+          "type": "integer",
+          "description": "Default max output tokens",
+          "minimum": 256,
+          "default": 4096
+        }
+      }
+    },
+    "roles": {
+      "type": "object",
+      "description": "Role definitions with optional defaults",
+      "minProperties": 1,
+      "additionalProperties": {
+        "oneOf": [
+          { "type": "string", "description": "Simple role description (backward compatible)" },
+          {
+            "type": "object",
+            "required": ["description"],
+            "properties": {
+              "description": { "type": "string" },
+              "defaults": {
+                "type": "object",
+                "properties": {
+                  "model": { "type": "string" },
+                  "temperature": {
+                    "type": "array",
+                    "items": { "type": "number" },
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "description": "Recommended temperature range [min, max]"
+                  }
+                }
+              },
+              "temperature_rationale": { "type": "string" },
+              "role_context": {
+                "type": "string",
+                "description": "Baseline activation prompt for this role. Included in system prompt between description and role_mindset."
+              },
+              "agent_assignment": {
+                "type": "string",
+                "description": "Agent identifier for multi-agent systems. 'single' = one agent fills all roles (default). Only takes effect when workflow_model is 'role-based-multi-agent'.",
+                "default": "single"
+              }
+            }
+          }
+        ]
+      }
+    },
+    "scope": {
+      "type": "object",
+      "required": ["in_scope", "out_of_scope", "adjacent"],
+      "properties": {
+        "in_scope": { "type": "array", "items": { "type": "string" } },
+        "out_of_scope": { "type": "array", "items": { "type": "string" } },
+        "adjacent": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "cross_cutting_concerns": {
+      "type": "array",
+      "items": {
+        "oneOf": [
+          { "type": "string" },
+          {
+            "type": "object",
+            "required": ["id", "title", "description", "enforcement_method", "minimum_phases"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^CCC-\\d{2}$" },
+              "title": { "type": "string" },
+              "description": { "type": "string" },
+              "enforcement_method": {
+                "type": "string",
+                "enum": ["checklist_items", "gate_condition", "compilation_precheck", "task_description"]
+              },
+              "enforcement_rule": { "type": "string" },
+              "minimum_phases": { "type": "integer", "minimum": 1 },
+              "phases_applied": { "type": "array", "items": { "type": "integer" } }
+            }
+          }
+        ]
+      }
+    },
+    "knowledge_base": {
+      "type": "object",
+      "required": ["complexity", "directory_structure"],
+      "properties": {
+        "complexity": { "type": "string", "enum": ["flat", "structured"] },
+        "layers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "domain_boundary", "authority_score", "separation_rule", "topics"],
+            "properties": {
+              "name": { "type": "string" },
+              "domain_boundary": { "type": "string" },
+              "authority_score": { "type": "number", "minimum": 0, "maximum": 1 },
+              "separation_rule": { "type": "string" },
+              "topics": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "entry_schema": { "type": "object" },
+        "bridge_schema": { "type": "object" },
+        "population_strategy": {
+          "type": "object",
+          "properties": {
+            "placeholder_seeding": { "type": "string" },
+            "harvesting_sources": { "type": "array", "items": { "type": "string" } },
+            "curation_rules": { "type": "string" },
+            "sync_rules": { "type": "string" },
+            "versioning_protocol": { "type": "string" },
+            "backends": {
+              "type": "array",
+              "description": "Available backends for web harvesting: ddg+webfetch, websearch+webfetch, webfetch, firecrawl, imported",
+              "items": { "type": "string" }
+            },
+            "domain_rankings": {
+              "type": "object",
+              "description": "Domain to priority score mapping (higher = more authoritative)",
+              "additionalProperties": { "type": "number" }
+            },
+            "quality_threshold": {
+              "type": "number",
+              "description": "Minimum confidence score for harvested entries (0.0-1.0)",
+              "minimum": 0,
+              "maximum": 1
+            },
+            "max_urls_per_session": {
+              "type": "integer",
+              "description": "Maximum URLs to harvest per session",
+              "minimum": 1
+            }
+          }
+        },
+        "kb_registry": {
+          "type": "string",
+          "description": "Path to KB registry file (relative to home directory)"
+        },
+        "directory_structure": { "type": "string" }
+      }
+    },
+    "failure_modes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "symptom", "root_cause", "fix", "prevention", "phase", "severity", "source"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^FM-\\d{3}$" },
+          "symptom": { "type": "string" },
+          "root_cause": { "type": "string" },
+          "fix": { "type": "string" },
+          "prevention": { "type": "string" },
+          "phase": { "type": "string" },
+          "severity": { "type": "string", "enum": ["crash", "error", "degraded", "cosmetic"] },
+          "source": { "type": "string" }
+        }
+      }
+    },
+    "checklists": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["title", "purpose", "compilation", "items"],
+        "properties": {
+          "title": { "type": "string" },
+          "purpose": { "type": "string" },
+          "compilation": {
+            "type": "object",
+            "required": ["context_load", "role_mindset", "objective"],
+            "properties": {
+              "context_load": { "type": "array", "items": { "type": "string" } },
+              "role_mindset": { "type": "string" },
+              "objective": { "type": "string" },
+              "pre_check": { "type": "array", "items": { "type": "string" } },
+              "failure_modes_relevant": { "type": "array", "items": { "type": "string" } },
+              "agent_config": {
+                "type": "object",
+                "description": "Override model parameters for this phase",
+                "properties": {
+                  "model": { "type": "string" },
+                  "temperature": { "type": "number", "minimum": 0, "maximum": 2 },
+                  "max_tokens": { "type": "integer", "minimum": 256 }
+                }
+              },
+              "system_prompt_auto": {
+                "type": "object",
+                "description": "Flags controlling system prompt generation",
+                "properties": {
+                  "role_definition": { "type": "boolean", "default": true },
+                  "phase_objective": { "type": "boolean", "default": true },
+                  "failure_modes": { "type": "boolean", "default": true },
+                  "pre_check_guidance": { "type": "boolean", "default": true },
+                  "context_files": { "type": "boolean", "default": true },
+                  "handoff_requirements": { "type": "boolean", "default": true }
+                }
+              },
+              "context_budget": {
+                "type": "object",
+                "description": "Token budget for context loading",
+                "properties": {
+                  "max_tokens": { "type": "integer", "minimum": 1000 },
+                  "priority": {
+                    "type": "object",
+                    "description": "File-to-priority mapping (1=highest, 10=lowest)",
+                    "additionalProperties": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 10
+                    }
+                  }
+                }
+              },
+              "skill_preparation": {
+                "type": "string",
+                "description": "Skill to run before phase starts",
+                "default": "none"
+              },
+              "success_criteria": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "What this compiled agent must produce before the phase gate runs. Surfaced at phase START so the agent works toward explicit targets. Should align with gate_conditions."
+              },
+              "tools_available": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Tools and capabilities active for this phase. Omitted tools are explicitly discouraged. Prevents role bleed (e.g., Researcher reaching for build tools)."
+              },
+              "behavioral_profile": {
+                "type": "object",
+                "description": "Phase-specific behavioral tuning for the compiled agent",
+                "properties": {
+                  "risk_tolerance": {
+                    "type": "string",
+                    "enum": ["minimal", "low", "moderate", "high"],
+                    "description": "How much risk the agent should accept. minimal=reject anything uncertain, high=explore freely"
+                  },
+                  "creativity_level": {
+                    "type": "string",
+                    "enum": ["strict", "conservative", "moderate", "exploratory"],
+                    "description": "How much creative latitude. strict=follow spec exactly, exploratory=propose alternatives"
+                  },
+                  "verbosity": {
+                    "type": "string",
+                    "enum": ["minimal", "concise", "detailed", "comprehensive"],
+                    "description": "Output detail level. minimal=headings+bullets, comprehensive=full prose"
+                  },
+                  "stance": {
+                    "type": "string",
+                    "enum": ["supportive", "neutral", "critical", "adversarial"],
+                    "description": "Evaluative posture. supportive=help succeed, adversarial=try to break it"
+                  }
+                }
+              }
+            }
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "required": ["title", "owner"],
+              "properties": {
+                "title": { "type": "string" },
+                "owner": { "type": "string" },
+                "description": { "type": "string" },
+                "conditional": { "type": ["string", "null"] },
+                "output": { "type": "string" },
+                "gate_conditions": { "type": "array", "items": { "type": "string" } },
+                "blocker_examples": { "type": "array", "items": { "type": "string" } },
+                "guardrail_checks": {
+                  "type": "array",
+                  "items": { "type": "string" },
+                  "description": "Advisory checks presented to the human at gate. Unlike gate_conditions, these do not block advancement."
+                },
+                "handoff": {
+                  "type": "object",
+                  "required": ["output_artifacts", "next_phase_context"],
+                  "properties": {
+                    "output_artifacts": { "type": "array", "items": { "type": "string" } },
+                    "next_phase_context": { "type": "array", "items": { "type": "string" } },
+                    "excluded_files": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "Files to exclude from context (replaces excluded_context)"
+                    },
+                    "excluded_context": {
+                      "type": "array",
+                      "items": { "type": "string" },
+                      "description": "DEPRECATED: Use excluded_files"
+                    },
+                    "context_update": {
+                      "type": "object",
+                      "description": "How persistent files change",
+                      "additionalProperties": {
+                        "type": "string",
+                        "enum": ["append", "update", "create"]
+                      }
+                    },
+                    "skill_validation": {
+                      "type": "string",
+                      "description": "Skill to run after phase completes",
+                      "default": "none"
+                    },
+                    "skill": {
+                      "type": "string",
+                      "description": "DEPRECATED: Use skill_validation"
+                    },
+                    "metrics_snapshot": {
+                      "type": "object",
+                      "required": ["collect", "record_in"],
+                      "properties": {
+                        "collect": {
+                          "type": "array",
+                          "items": { "type": "string", "pattern": "^MET-\\d{2}$" },
+                          "minItems": 1
+                        },
+                        "record_in": { "type": "string" }
+                      }
+                    },
+                    "kb_status": {
+                      "type": "object",
+                      "properties": {
+                        "total_entries": { "type": ["integer", "null"], "minimum": 0 },
+                        "harvested": { "type": ["integer", "null"], "minimum": 0 },
+                        "placeholder": { "type": ["integer", "null"], "minimum": 0 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "metrics": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["title", "description", "type", "category", "measurement_method"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^MET-\\d{2}$",
+            "description": "Unique metric identifier. Required for version >= 3."
+          },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "type": { "type": "string", "enum": ["metric_integer", "metric_currency", "metric_duration"] },
+          "category": { "type": "string", "enum": ["process", "output_quality", "domain_outcome"] },
+          "target": { "type": ["number", "null"] },
+          "measurement_method": { "type": "string" }
+        }
+      }
+    },
+    "usage_instructions": {
+      "type": "object",
+      "required": ["how_to_run", "session_strategy", "cost_optimization", "post_run_review"],
+      "properties": {
+        "how_to_run": { "type": "array", "items": { "type": "string" } },
+        "session_strategy": { "type": "array", "items": { "type": "string" } },
+        "cost_optimization": { "type": "array", "items": { "type": "string" } },
+        "post_run_review": {
+          "type": "object",
+          "required": ["assess"],
+          "properties": {
+            "assess": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    },
+    "phase_kb_mapping": {
+      "type": "object",
+      "additionalProperties": { "type": "array", "items": { "type": "string" } }
+    },
+    "skill_activation": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "router": {
+      "type": "object",
+      "required": ["description", "decision_tree", "default"],
+      "properties": {
+        "description": { "type": "string" },
+        "decision_tree": { "type": "array", "items": { "type": "string" } },
+        "default": { "type": "string" }
+      }
+    },
+    "context_preservation": {
+      "type": "object",
+      "required": ["decisions_ledger", "artifact_manifest", "rules"],
+      "properties": {
+        "decisions_ledger": { "type": "string" },
+        "artifact_manifest": { "type": "string" },
+        "metrics_tracker": {
+          "type": "string",
+          "description": "Running log of metric values collected at phase gates"
+        },
+        "rules": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "complexity_profile": {
+      "type": "object",
+      "description": "Set in Phase 0, verified in final phase",
+      "properties": {
+        "classification": {
+          "type": "string",
+          "enum": ["simple", "moderate", "complex", "structured"]
+        },
+        "reasoning": {
+          "type": "string",
+          "description": "Why this classification was chosen"
+        },
+        "expected_phases": {
+          "type": "integer",
+          "minimum": 3,
+          "maximum": 20
+        },
+        "expected_roles": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10
+        },
+        "expected_ccc_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 15
+        },
+        "complexity_score": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 12,
+          "description": "Calculated complexity score (0-12)"
+        },
+        "gate_verified": {
+          "type": "boolean",
+          "default": false,
+          "description": "Set true after final phase gate"
+        }
+      },
+      "required": ["classification", "expected_phases"]
+    }
+  }
+}

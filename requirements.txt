@@ -1,0 +1,4 @@
+# Only dependency needed to validate playbooks. Everything else is Python stdlib.
+jsonschema>=4,<5
+# Optional: Langfuse tracing (validators run fine without it; enable via env if you use it).
+# langfuse>=2
