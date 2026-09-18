@@ -22,6 +22,9 @@ All notable changes to the Playbook Creator Playbook. This public distribution s
   `owned_phases`, `interfaces`, `invariant`) — all optional, existing playbooks stay valid.
 - `validate_semantic.py` gains team-completeness checks: undefined task owner → error; ownerless
   task, defined-but-idle role, and absent independent verifier → warnings.
+- **Bundled generator prompt:** `prompts/playbook-updater.md` — turns a raw AI-development session
+  history into a schema-shaped playbook + gap analysis; updated to the v8 contract (custom-team
+  derivation, invariants, optional role-spec fields, CCC-10/11, four-value severity enum).
 
 ## v7 — 2026-09-18
 - **Provider-agnostic capability model.** Abstract tiers `frontier / high / fast` (legacy

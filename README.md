@@ -13,6 +13,8 @@ plan** (high budget) with a first-class OpenAI Codex profile.
 - **Start-here skeleton for a new playbook:** [`templates/output-template.json`](templates/output-template.json)
 - **Validators:** [`scripts/validate_playbook.py`](scripts/validate_playbook.py) (structural + JSON Schema),
   [`scripts/validate_semantic.py`](scripts/validate_semantic.py) (cross-reference / semantic)
+- **Generator prompt:** [`prompts/playbook-updater.md`](prompts/playbook-updater.md) — a standalone
+  prompt that turns a raw AI-development session history into a schema-shaped playbook + gap analysis
 
 ## Why
 
@@ -41,6 +43,16 @@ python3 scripts/validate_semantic.py my-playbook.json
 
 `--no-trace` guarantees the validator runs with no external dependencies. (If you use Langfuse,
 omit it and set `PBCPB_TRACE_WORKSPACE`.)
+
+## Generating a playbook from a session history
+
+Two ways to author a playbook. Walk the 16 phases interactively (above), **or** — when you already
+have a raw history of an AI-assisted build to distill — hand [`prompts/playbook-updater.md`](prompts/playbook-updater.md)
+to an agent along with that transcript. It extracts the repeated workflows, failure modes, domain
+patterns, and creative decision points into a schema-shaped JSON playbook plus a gap analysis. It
+follows the same v8 contract: derive a custom team, mark the Coordinator / independent Verifier /
+Operator invariants, and emit the optional role-spec fields. Always validate its output with the two
+validators before shipping.
 
 ## The 16 phases
 
