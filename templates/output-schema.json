@@ -113,8 +113,40 @@
               },
               "agent_assignment": {
                 "type": "string",
-                "description": "Agent identifier for multi-agent systems. 'single' = one agent fills all roles (default). Only takes effect when workflow_model is 'role-based-multi-agent'.",
+                "description": "How the role is executed: 'single' (one agent fills all roles, default), or a distinct agent identifier for role-based-multi-agent. May also be 'parallel' or 'swarm' for fan-out roles. Compiled into the agent file(s).",
                 "default": "single"
+              },
+              "decision_authority": {
+                "type": "string",
+                "description": "What this role may decide/approve alone vs. must escalate. Drives the compiled agent's autonomy boundary."
+              },
+              "tools": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Capabilities/access this role needs (and, by omission, is denied). Compiled into the agent file's tool grant."
+              },
+              "owns": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "Task ids or task-cluster names this role is accountable for."
+              },
+              "owned_phases": {
+                "type": "array",
+                "items": { "type": "integer" },
+                "description": "Phase numbers this role owns (alternative/complement to `owns`)."
+              },
+              "interfaces": {
+                "type": "object",
+                "description": "Artifact flow for the handoff graph.",
+                "properties": {
+                  "consumes": { "type": "array", "items": { "type": "string" } },
+                  "produces": { "type": "array", "items": { "type": "string" } }
+                }
+              },
+              "invariant": {
+                "type": "string",
+                "enum": ["coordinator", "verifier", "operator"],
+                "description": "Marks a role as satisfying a mandatory team invariant: coordinator (gates/tracking/escalation), verifier (independent, never verifies own work), or operator (human owner of irreversible/creative/external decisions)."
               }
             }
           }

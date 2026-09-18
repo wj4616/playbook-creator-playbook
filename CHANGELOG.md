@@ -2,6 +2,27 @@
 
 All notable changes to the Playbook Creator Playbook. This public distribution starts at v7.
 
+## v8 — 2026-09-18
+- **Domain-custom role & agent generation.** Produced playbooks are no longer forced onto a fixed
+  six-role slate. **Phase 5** now *derives* a bespoke execution team from the actual work — clustering
+  tasks along four axes (domain expertise, decision authority, tools/access, independence). The
+  six-role library becomes a **palette** (base-on / add / replace / drop); domain-custom `[RoleName]`s
+  are expected. Each role is written as a provider-neutral **agent spec** (`role_context`,
+  `decision_authority`, `tools`, `owns`/`owned_phases`, `interfaces{consumes,produces}`,
+  `agent_assignment`, `defaults{tier,temperature}`).
+- **Balanced minimality gate + mandatory invariants:** complexity caps are guidance (simple ~3,
+  standard ~5, complex ~7), not limits — specialists allowed with a one-line justification. Every
+  team must have exactly one **Coordinator**, at least one **independent Verifier** (no artifact
+  verified by its producer), and a **human/Operator** for irreversible/creative/external decisions.
+- **Phase 7 agent compilation:** canonical role specs compile into per-provider agent files
+  (Claude Code `.claude/agents/*.md` with tier→model resolution, Codex prompts, generic
+  `agents/manifest.json`). The spec is the source of truth; agent files are rebuildable artifacts.
+- **+CCC-10** (team completeness/ownership) and **+CCC-11** (independent verification);
+  **+FM-032…036**. Schema documents optional role-spec fields (`decision_authority`, `tools`, `owns`,
+  `owned_phases`, `interfaces`, `invariant`) — all optional, existing playbooks stay valid.
+- `validate_semantic.py` gains team-completeness checks: undefined task owner → error; ownerless
+  task, defined-but-idle role, and absent independent verifier → warnings.
+
 ## v7 — 2026-09-18
 - **Provider-agnostic capability model.** Abstract tiers `frontier / high / fast` (legacy
   `opus/sonnet/haiku` kept as `tier_aliases`), resolved to current models per provider in
