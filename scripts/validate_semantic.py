@@ -11,8 +11,10 @@ Usage:
 """
 
 import argparse
+import difflib
 import os
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Tuple, List
@@ -60,6 +62,35 @@ def extract_role_name(role_mindset: str) -> str:
     return role_mindset.strip()
 
 
+def resolve_mindset_roles(role_mindset: str, defined_lower: dict):
+    """Resolve the role(s) a role_mindset references against the defined roles.
+
+    Accepts real-world mindset labels that name a role without being an exact match:
+      - "Operator — designing…"      → Operator            (dash separator; existing behavior)
+      - "Operator (stakeholder)"     → Operator            (trailing parenthetical annotation)
+      - "Builder + Operator"         → Builder, Operator   (a mindset that spans two roles)
+      - "Security Auditor"           → Security            (defined role as a whole-word prefix)
+
+    Returns (matched: set[str], unmatched: list[str]) of the canonical role names.
+    """
+    head = extract_role_name(role_mindset)              # part before the "— description" separator
+    parts = [p for p in re.split(r"\s*[+&/]\s*", head) if p.strip()]  # composite: Role + Role
+    matched, unmatched = set(), []
+    for p in parts:
+        p = re.sub(r"\s*\([^)]*\)\s*$", "", p).strip()  # drop a trailing "(annotation)"
+        low = p.lower()
+        if low in defined_lower:                        # exact
+            matched.add(defined_lower[low])
+            continue
+        hit = next((canon for rl, canon in defined_lower.items()
+                    if low == rl or low.startswith(rl + " ")), None)  # whole-word leading prefix
+        if hit:
+            matched.add(hit)
+        else:
+            unmatched.append(p)
+    return matched, unmatched
+
+
 def validate_semantic(playbook: dict) -> Tuple[List[str], List[str]]:
     """
     Validate semantic consistency of playbook.
@@ -82,11 +113,12 @@ def validate_semantic(playbook: dict) -> Tuple[List[str], List[str]]:
         if not role_mindset:
             continue
 
-        role_name = extract_role_name(role_mindset)
-
-        if role_name and role_name.lower() not in defined_roles_lower:
+        _matched, unmatched = resolve_mindset_roles(role_mindset, defined_roles_lower)
+        for miss in unmatched:
+            near = difflib.get_close_matches(miss, list(roles.keys()), n=1)
+            hint = f" (did you mean '{near[0]}'?)" if near else ""
             errors.append(
-                f"{phase_title}: role_mindset '{role_mindset}' references undefined role '{role_name}'"
+                f"{phase_title}: role_mindset '{role_mindset}' references undefined role '{miss}'{hint}"
             )
 
     # 2. Failure mode phase references exist
@@ -132,6 +164,12 @@ def validate_semantic(playbook: dict) -> Tuple[List[str], List[str]]:
             owner_roles.add(_strip(owner).lower())
 
     defined_norm = {r.lower(): r for r in roles.keys()}
+    # roles that any phase's mindset resolves to (composite/annotated forms included)
+    mindset_roles = set()
+    for p in playbook.get("checklists", []):
+        rm = p.get("compilation", {}).get("role_mindset", "")
+        if rm:
+            mindset_roles |= {r.lower() for r in resolve_mindset_roles(rm, defined_norm)[0]}
     if roles:  # only meaningful once roles are defined
         for o in sorted(owner_roles):
             if o and o not in defined_norm:
@@ -139,11 +177,7 @@ def validate_semantic(playbook: dict) -> Tuple[List[str], List[str]]:
                     f"Task owner '[{o}]' is not a defined role (CCC-10: team must cover the work)"
                 )
         for rname_lower, rname in defined_norm.items():
-            mindset_used = rname_lower in {m.lower() for m in [
-                extract_role_name(p.get("compilation", {}).get("role_mindset", ""))
-                for p in playbook.get("checklists", [])
-            ] if m}
-            if rname_lower not in owner_roles and not mindset_used:
+            if rname_lower not in owner_roles and rname_lower not in mindset_roles:
                 warnings.append(
                     f"Role '{rname}' is defined but owns no task and drives no phase (CCC-10: no idle agents)"
                 )
@@ -151,7 +185,9 @@ def validate_semantic(playbook: dict) -> Tuple[List[str], List[str]]:
     # 6. Independent verification presence (v8 / CCC-11)
     #    Heuristic: at least one role reads as an independent verifier.
     if roles:
-        verifier_terms = ("audit", "verif", "review", "qa", "quality", "check", "validat")
+        verifier_terms = ("audit", "verif", "review", "qa", "quality", "check", "validat",
+                          "security", "pentest", "penetration", "adversar", "red team", "redteam",
+                          "assur", "inspect")
         has_verifier = any(
             any(t in name.lower() for t in verifier_terms)
             or any(t in (spec.get("description", "").lower() if isinstance(spec, dict) else "")

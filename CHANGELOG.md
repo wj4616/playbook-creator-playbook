@@ -19,6 +19,12 @@ All notable changes to the Playbook Creator Playbook. This public distribution s
     the session tooling. Meta-playbook → v10.
   - Sessions are never auto-summarized into prose (that would destroy error text / tool sequences /
     file diffs); catalog and digest are derived, regenerable views.
+- **Validator hardening** (surfaced by dogfooding the harvest flow): `validate_semantic.py` now
+  resolves real-world `role_mindset` labels — `Role (annotation)`, `Role + Role` composites (each
+  validated; both satisfy CCC-10), and a defined role as a whole-word leading prefix
+  (`Security Auditor` → `Security`) — and adds a close-match suggestion on genuine misses. The CCC-11
+  independent-verifier heuristic now also recognizes `security` / `pentest` / `penetration` /
+  `adversar` / `red team` / `assur` / `inspect` role language.
 
 ## v9 — 2026-09-18
 - **The session-harvest updater is now a front-end to the pipeline, not a parallel generator.**
