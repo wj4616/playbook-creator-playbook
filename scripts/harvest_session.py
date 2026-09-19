@@ -20,7 +20,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import session_store as store  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
+SELF = Path(__file__).resolve()
 SCHEMA = ROOT / "templates" / "output-schema.json"
 TEMPLATE = ROOT / "templates" / "output-template.json"
 
@@ -108,6 +112,103 @@ def cmd_check(args):
     sys.exit(0 if ok else 1)
 
 
+# ----------------------------------------------------------------- sessions (catalog)
+def _catalog(args):
+    return Path(args.catalog) if getattr(args, "catalog", None) else store.DEFAULT_CATALOG
+
+
+def cmd_sessions(args):
+    if args.sessions_cmd == "index":
+        store.index(_catalog(args), quiet=args.quiet)
+    elif args.sessions_cmd == "list":
+        rows = store.list_sessions(
+            _catalog(args), project=args.project, since=args.since, until=args.until,
+            tag=args.tag, source=args.source, query=args.query)
+        rows = rows[: args.limit] if args.limit else rows
+        if not rows:
+            print("no sessions match (run: harvest_session.py sessions index)")
+            return
+        for r in rows:
+            tools = sum(r.get("tools", {}).values())
+            tg = (" [" + ",".join(r["tags"]) + "]") if r.get("tags") else ""
+            label = (r.get("title") or r.get("first_prompt") or "").replace("\n", " ").replace("\r", " ").strip()
+            print(f"{(r.get('start') or '')[:10]}  {r['source'][:2]}  {r['id']}  "
+                  f"{r.get('user_turns',0)}u/{tools}t  {label[:60]}{tg}")
+            if args.paths:
+                print(f"        {r['path']}")
+    elif args.sessions_cmd == "tag":
+        try:
+            tags = store.tag(_catalog(args), args.id, args.tags, remove=args.remove)
+            print(f"{args.id} tags: {tags or '—'}")
+        except KeyError:
+            sys.exit(f"session not in catalog: {args.id} (run: sessions index)")
+
+
+def cmd_ingest(args):
+    cat = _catalog(args)
+    if args.ids:
+        ids = args.ids
+    else:
+        rows = store.list_sessions(cat, project=args.project, since=args.since, until=args.until,
+                                   tag=args.tag, source=args.source, query=args.query)
+        rows = rows[: args.limit] if args.limit else rows
+        ids = [r["id"] for r in reversed(rows)]  # chronological for the digest
+    if not ids:
+        sys.exit("no sessions selected (try: harvest_session.py sessions list ...)")
+    result = store.ingest(ids, cat, fmt=args.format, max_output=args.max_output,
+                          include_thinking=args.include_thinking)
+    text = result if isinstance(result, str) else json.dumps(result, indent=2, ensure_ascii=False)
+    if args.out:
+        Path(args.out).write_text(text + ("\n" if not text.endswith("\n") else ""))
+        print(f"ingested {len(ids)} session(s) -> {args.out}")
+        print("Next: distill it into research/session-harvest.md via prompts/playbook-updater.md")
+    else:
+        print(text)
+
+
+# ----------------------------------------------------------------- hooks
+def _hook_command():
+    return f"python3 {SELF} sessions index --quiet"
+
+
+def cmd_hooks(args):
+    snippet = {"SessionEnd": [{"hooks": [{"type": "command", "command": _hook_command()}]}]}
+    settings = Path(args.settings) if args.settings else (Path.home() / ".claude" / "settings.json")
+    if args.hooks_cmd == "print":
+        print("Add to " + str(settings) + " under \"hooks\":\n")
+        print(json.dumps(snippet, indent=2))
+        return
+    data = {}
+    if settings.exists():
+        try:
+            data = json.loads(settings.read_text())
+        except json.JSONDecodeError:
+            sys.exit(f"{settings} is not valid JSON — fix it or edit by hand")
+    hooks = data.setdefault("hooks", {})
+    se = hooks.setdefault("SessionEnd", [])
+    present = any("harvest_session.py sessions index" in h.get("command", "")
+                  for grp in se for h in grp.get("hooks", []))
+    if args.hooks_cmd == "install":
+        if present:
+            print("SessionEnd reindex hook already installed.")
+            return
+        if settings.exists():
+            bak = settings.with_suffix(".json.bak")
+            bak.write_text(settings.read_text())
+            print(f"backed up {settings} -> {bak}")
+        se.append(snippet["SessionEnd"][0])
+        settings.parent.mkdir(parents=True, exist_ok=True)
+        settings.write_text(json.dumps(data, indent=2) + "\n")
+        print(f"installed SessionEnd reindex hook into {settings}")
+        print("Every finished session now refreshes the catalog automatically.")
+    elif args.hooks_cmd == "uninstall":
+        for grp in se:
+            grp["hooks"] = [h for h in grp.get("hooks", []) if "harvest_session.py sessions index" not in h.get("command", "")]
+        hooks["SessionEnd"] = [g for g in se if g.get("hooks")]
+        settings.write_text(json.dumps(data, indent=2) + "\n")
+        print(f"removed the reindex hook from {settings}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -128,6 +229,41 @@ def main():
     s3.add_argument("playbook")
     s3.add_argument("--schema")
     s3.set_defaults(func=cmd_check)
+
+    # sessions
+    ss = sub.add_parser("sessions", help="catalog the transcripts your agents already record")
+    ssub = ss.add_subparsers(dest="sessions_cmd", required=True)
+    si = ssub.add_parser("index", help="(re)scan all Claude Code + Codex sessions into the catalog")
+    si.add_argument("--catalog"); si.add_argument("--quiet", action="store_true")
+    sl = ssub.add_parser("list", help="list/filter catalogued sessions")
+    for a in ("--project", "--since", "--until", "--tag", "--source", "--query", "--catalog"):
+        sl.add_argument(a)
+    sl.add_argument("--limit", type=int); sl.add_argument("--paths", action="store_true")
+    st = ssub.add_parser("tag", help="add/remove tags on a session")
+    st.add_argument("id"); st.add_argument("tags", nargs="+")
+    st.add_argument("--remove", action="store_true"); st.add_argument("--catalog")
+    ss.set_defaults(func=cmd_sessions)
+
+    # ingest
+    ig = sub.add_parser("ingest", help="normalize selected sessions into a digest for the prompt")
+    ig.add_argument("ids", nargs="*")
+    for a in ("--project", "--since", "--until", "--tag", "--source", "--query", "--catalog", "--out"):
+        ig.add_argument(a)
+    ig.add_argument("--limit", type=int)
+    ig.add_argument("--format", choices=["md", "json"], default="md")
+    ig.add_argument("--max-output", dest="max_output", type=int, default=500)
+    ig.add_argument("--include-thinking", dest="include_thinking", action="store_true")
+    ig.set_defaults(func=cmd_ingest)
+
+    # hooks
+    hk = sub.add_parser("hooks", help="install the SessionEnd auto-reindex hook")
+    hsub = hk.add_subparsers(dest="hooks_cmd", required=True)
+    for name, helptext in (("print", "print the settings snippet"),
+                           ("install", "merge the hook into ~/.claude/settings.json (backs up first)"),
+                           ("uninstall", "remove the hook")):
+        hp = hsub.add_parser(name, help=helptext)
+        hp.add_argument("--settings")
+    hk.set_defaults(func=cmd_hooks)
 
     args = ap.parse_args()
     args.func(args)

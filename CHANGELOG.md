@@ -2,6 +2,24 @@
 
 All notable changes to the Playbook Creator Playbook. This public distribution starts at v7.
 
+## v10 — 2026-09-18
+- **Session capture, management, and normalization — from the transcripts your agents already record.**
+  Claude Code writes a complete JSONL per session (`~/.claude/projects/<slug>/<id>.jsonl`) and Codex
+  under `~/.codex/sessions/`, so capture is already solved. v10 adds the select + normalize layer:
+  - **New `scripts/session_store.py` + `harvest_session.py` subcommands.** `sessions index` builds a
+    rebuildable catalog (id, project, time range, tool counts, git branch, the Claude-generated title,
+    and **user tags**, stored at `~/.claude/pbcpb/session-catalog.json`); `sessions list/tag` find and
+    **group a multi-session build into one campaign**; `ingest [--tag <campaign>]` normalizes one or
+    many sessions into a **lossless-structured digest** (turn-ordered asks, tool calls with args,
+    results, file edits, git branch) — the harvest input, no manual paste. Only tags are user data;
+    the JSONL stays ground truth.
+  - **`hooks print | install | uninstall`** — merges a `SessionEnd` hook into `~/.claude/settings.json`
+    that auto-refreshes the catalog (backs up first, idempotent, preserves existing keys/hooks).
+  - The updater prompt now sources its material from `ingest`; Phase 0 `commission_source` points at
+    the session tooling. Meta-playbook → v10.
+  - Sessions are never auto-summarized into prose (that would destroy error text / tool sequences /
+    file diffs); catalog and digest are derived, regenerable views.
+
 ## v9 — 2026-09-18
 - **The session-harvest updater is now a front-end to the pipeline, not a parallel generator.**
   Previously the prompt carried a prose copy of the contract and one-shot-emitted a playbook (so it

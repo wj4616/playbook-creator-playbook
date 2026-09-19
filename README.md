@@ -8,7 +8,7 @@ that another operator (or agent) can then execute.
 Provider-agnostic and executable by any AI agent system; **optimized for Claude Code on the Max
 plan** (high budget) with a first-class OpenAI Codex profile.
 
-- **The meta-playbook:** [`playbook-creator-playbook.json`](playbook-creator-playbook.json) (v9)
+- **The meta-playbook:** [`playbook-creator-playbook.json`](playbook-creator-playbook.json) (v10)
 - **Output contract:** [`templates/output-schema.json`](templates/output-schema.json)
 - **Start-here skeleton for a new playbook:** [`templates/output-template.json`](templates/output-template.json)
 - **Validators:** [`scripts/validate_playbook.py`](scripts/validate_playbook.py) (structural + JSON Schema),
@@ -16,8 +16,9 @@ plan** (high budget) with a first-class OpenAI Codex profile.
 - **Session-harvest front-end:** [`prompts/playbook-updater.md`](prompts/playbook-updater.md) — a
   prompt that distills a raw AI-development session history into a cited *harvest* and feeds it to
   the pipeline (or fills the template directly)
-- **Orchestrator:** [`scripts/harvest_session.py`](scripts/harvest_session.py) — `harvest-skeleton` /
-  `scaffold` / `check` (runs both validators to green)
+- **Orchestrator:** [`scripts/harvest_session.py`](scripts/harvest_session.py) — session catalog
+  (`sessions index/list/tag`), `ingest`, `scaffold`, `check` (runs both validators to green), and the
+  `hooks` installer; engine in [`scripts/session_store.py`](scripts/session_store.py)
 
 ## Why
 
@@ -54,10 +55,19 @@ have a raw history of an AI-assisted build to distill — use the **session-harv
 v9 it is a front-end *to the pipeline*, not a one-shot generator: it extracts cited evidence and lets
 PBCPB do the shaping, role derivation, validation, and audit.
 
+You don't paste transcripts — Claude Code and Codex already record every session in full as JSONL.
+The tooling catalogs that store and normalizes it (v10):
+
 ```bash
-# 1) Scaffold the cited-evidence skeleton, then fill it via the prompt + your transcript
-python3 scripts/harvest_session.py harvest-skeleton --out research/session-harvest.md
-#    (hand research/session-harvest.md + the raw transcript to prompts/playbook-updater.md)
+# 0) Catalog the sessions your agents already recorded, then find + group a build
+python3 scripts/harvest_session.py sessions index
+python3 scripts/harvest_session.py sessions list --project <slug> --since 2026-09-01
+python3 scripts/harvest_session.py sessions tag <id> my-build      # group a multi-session campaign
+#    (optional: `hooks install` adds a SessionEnd hook that keeps the catalog fresh automatically)
+
+# 1) Normalize the campaign into a lossless-structured digest, then distill it
+python3 scripts/harvest_session.py ingest --tag my-build --out session-digest.md
+#    (hand session-digest.md to prompts/playbook-updater.md → research/session-harvest.md)
 
 # 2a) INTEGRATED (recommended): set commission_source=session_history at Phase 0 with the
 #     harvest as input; Phase 1 ingests + validates it and Phases 4-15 build/verify the playbook —

@@ -44,10 +44,22 @@ use them:
 </use_the_system>
 
 <modes>
+**Getting the raw material.** Do NOT ask the operator to paste a transcript. Claude Code and Codex
+already record every session in full; catalog and normalize them:
+```
+python3 scripts/harvest_session.py sessions index            # build/refresh the catalog
+python3 scripts/harvest_session.py sessions list --project <slug> --since <date>
+python3 scripts/harvest_session.py sessions tag <id> <campaign>   # group a multi-session build
+python3 scripts/harvest_session.py ingest --tag <campaign> --out session-digest.md
+```
+`ingest` writes a lossless-structured digest (turn-ordered asks, tool calls with args, results, file
+edits, git branch, boundaries). Distill THAT into the harvest — it is the complete history, not a
+lossy retelling.
+
 **Integrated mode (recommended — "use PBCPB to do better than this prompt alone").**
 When the operator will run the full PBCPB pipeline:
-1. Emit `research/session-harvest.md` (the cited evidence, sections per `<output_format>`).
-   `python3 scripts/harvest_session.py harvest-skeleton` writes the section skeleton to fill.
+1. From the ingested `session-digest.md`, write `research/session-harvest.md` (cited evidence,
+   sections per `<output_format>`). `harvest_session.py harvest-skeleton` writes the section skeleton.
 2. Tell the operator to set **`commission_source=session_history`** at PBCPB Phase 0 with this
    harvest as the input. Phase 1 then ingests + validates it, and Phases 4–15 derive the team,
    assemble, validate, audit, and dry-run.
